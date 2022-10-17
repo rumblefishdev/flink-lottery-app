@@ -1,0 +1,15 @@
+{
+  "ApplicationName": "LotteryApp",
+  "CurrentApplicationVersionId": 0,
+  "ApplicationConfigurationUpdate": {
+    "ApplicationCodeConfigurationUpdate": {
+      "CodeContentUpdate": {
+        "S3ContentLocationUpdate": {
+          "BucketARNUpdate": "arn:aws:s3:::lottery-kinesis",
+          "FileKeyUpdate": "flink-lottery-1.0.jar",
+          "ObjectVersionUpdate": ""
+        }
+      }
+    }
+  }
+}

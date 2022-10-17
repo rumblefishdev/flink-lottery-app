@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  NamePrefix:
+    Type: String
+  ArtifactsBucketName:
+    Type: String
+  StreamRetentionPeriodHours:
+    Type: Number
+    Default: 24
+  StreamShardCount:
+    Type: Number
+    Default: 1
+  KinesisAppBucketKey:
+    Type: String
+
+Outputs:
+  LotteryEventsInputStream:
+    Value: !Ref LotteryEventsInputStream
+  UserEventsInputStream:
+    Value: !Ref UserEventsInputStream
+  LotteryEventsOutputStream:
+    Value: !Ref LotteryEventsOutputStream
+  UserEventsOutputStream:
+    Value: !Ref UserEventsOutputStream
+  KinesisApplicationName:
+    Value: !Ref KinesisAnalyticsApp
+
+Resources:
+  UserEventsInputStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub ${NamePrefix}UserEventsInputStream
+      RetentionPeriodHours: !Ref StreamRetentionPeriodHours
+      ShardCount: !Ref StreamShardCount
+
+  LotteryEventsInputStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub ${NamePrefix}LotteryEventsInputStream
+      RetentionPeriodHours: !Ref StreamRetentionPeriodHours
+      ShardCount: !Ref StreamShardCount
+
+  LotteryEventsOutputStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub ${NamePrefix}LotteryEventsOutputStream
+      RetentionPeriodHours: !Ref StreamRetentionPeriodHours
+      ShardCount: !Ref StreamShardCount
+
+  UserEventsOutputStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub ${NamePrefix}UserEventsOutputStream
+      RetentionPeriodHours: !Ref StreamRetentionPeriodHours
+      ShardCount: !Ref StreamShardCount
+
+  KinensisApplicationServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "kinesisanalytics.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: S3
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+
+                Resource:
+                  - !Sub arn:aws:s3:::${ArtifactsBucketName}
+                  - !Sub arn:aws:s3:::${ArtifactsBucketName}/*
+              - Sid: ReadLotteryEventsInputStream
+                Effect: Allow
+                Action: kinesis:*
+                Resource: !Sub arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${LotteryEventsInputStream}
+              - Sid: ReadUserEventsInputStream
+                Effect: Allow
+                Action: kinesis:*
+                Resource: !Sub arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${UserEventsInputStream}
+              - Sid: WriteLotteryEventsOutputStream
+                Effect: Allow
+                Action: kinesis:*
+                Resource: !Sub arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${LotteryEventsOutputStream}
+              - Sid: WriteUserEventsOutputStream
+                Effect: Allow
+                Action: kinesis:*
+                Resource: !Sub arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${UserEventsOutputStream}
+              - Sid: LogWrite
+                Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${LogGroup}:log-stream:${LogStream}*
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${LogGroup}:*
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
+
+              - Sid: Metrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+
+  KinesisAnalyticsApp:
+    Type: AWS::KinesisAnalyticsV2::Application
+    Properties:
+      ApplicationName: !Sub ${NamePrefix}AnalyticsApp
+      ApplicationConfiguration:
+        ApplicationCodeConfiguration:
+          CodeContent:
+            S3ContentLocation:
+              BucketARN: !Sub arn:aws:s3:::${ArtifactsBucketName}
+              FileKey: !Ref KinesisAppBucketKey
+          CodeContentType: "ZIPFILE"
+        FlinkApplicationConfiguration:
+          MonitoringConfiguration:
+            ConfigurationType: DEFAULT
+        EnvironmentProperties:
+          PropertyGroups:
+            - PropertyGroupId: ProducerConfigProperties
+              PropertyMap:
+                flink.stream.initpos: LATEST
+                aws.region: !Ref AWS::Region
+                AggregationEnabled: false
+            - PropertyGroupId: ConsumerConfigProperties
+              PropertyMap:
+                aws.region: !Ref AWS::Region
+            - PropertyGroupId: LotteryEventsInputStream
+              PropertyMap:
+                name: !Ref LotteryEventsInputStream
+            - PropertyGroupId: UserEventsInputStream
+              PropertyMap:
+                name: !Ref UserEventsInputStream
+            - PropertyGroupId: LotteryEventsOutputStream
+              PropertyMap:
+                name: !Ref LotteryEventsOutputStream
+            - PropertyGroupId: UserEventsOutputStream
+              PropertyMap:
+                name: !Ref UserEventsOutputStream
+      RuntimeEnvironment: FLINK-1_13
+      ServiceExecutionRole: !GetAtt KinensisApplicationServiceRole.Arn
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+      LogGroupName: !Sub /${NamePrefix}Logs
+
+  LogStream:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Ref LogGroup
+      LogStreamName: logs
+
+  BasicApplicationV2CloudWatchLoggingOption:
+    Type: AWS::KinesisAnalyticsV2::ApplicationCloudWatchLoggingOption
+    Properties:
+      ApplicationName: !Ref KinesisAnalyticsApp
+      CloudWatchLoggingOption:
+        LogStreamARN: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${LogGroup}:log-stream:${LogStream}
+
+  OutputConsumer:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: nodejs16.x
+      Timeout: 60
+      MemorySize: 512
+      CodeUri: ./lambdas.zip
+      Handler: dist/consumer.handler
+      Policies:
+        - KinesisStreamReadPolicy:
+            StreamName: !Sub ${NamePrefix}LotteryEventsOutputStream
+      Events:
+        AuctionEventsStream:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt LotteryEventsOutputStream.Arn
+            StartingPosition: LATEST
+            BatchSize: 100
+        UserAvailableBidsStream:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt UserEventsOutputStream.Arn
+            StartingPosition: LATEST
+            BatchSize: 100

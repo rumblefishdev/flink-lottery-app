@@ -1,0 +1,7 @@
+{
+  "Parameters": {
+    "NamePrefix": "BidClubKinesis",
+    "ArtifactsBucketName": "lottery-kinesis",
+    "KinesisAppBucketKey": "flink-lottery-1.0.jar"
+  }
+}
