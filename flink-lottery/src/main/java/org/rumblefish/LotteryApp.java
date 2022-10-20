@@ -6,6 +6,7 @@ import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.rumblefish.connectorconfig.ConnectorConfig;
 import org.rumblefish.connectorconfig.ConnectorType;
 import org.rumblefish.connectorconfig.KafkaConnectorConfig;
+import org.rumblefish.connectorconfig.KinesisConnectorConfig;
 
 public class LotteryApp {
 
@@ -32,7 +33,7 @@ public class LotteryApp {
         if (connector.equals(ConnectorType.KAFKA_CONNECTOR.getValue()))
             return new KafkaConnectorConfig();
         if (connector.equals(ConnectorType.KINESIS_CONNECTOR.getValue()))
-            return new KafkaConnectorConfig();
+            return new KinesisConnectorConfig();
         else {
             throw new IllegalStateException("Connector does not exists");
         }
